@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ env_var('POSTGRES_DB', 'sport_data') }}"
+    schema: raw
+    tables:
+      - name: business_rules_raw
+      - name: rh_employees_raw
+      - name: sport_declarations_raw
+      - name: sport_activities_stream_raw
+      - name: slack_messages_raw

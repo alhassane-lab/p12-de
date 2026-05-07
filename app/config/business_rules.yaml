@@ -1,0 +1,17 @@
+rule_version: "2026-01"
+effective_from: "2026-01-01"
+office_address: "1362 Av. des Platanes, 34970 Lattes"
+bonus_rate: 0.05
+wellbeing_days: 5
+min_activities_per_year: 15
+max_km_walk_run: 15
+max_km_cycle_scooter_other: 25
+sportive_transport_modes:
+  - marche
+  - running
+  - marche/running
+  - velo
+  - vélo
+  - trottinette
+  - roller
+  - skate

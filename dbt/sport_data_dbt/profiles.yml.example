@@ -1,0 +1,12 @@
+sport_data_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'sport_user') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'sport_pass') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'sport_data') }}"
+      schema: public
+      threads: 4

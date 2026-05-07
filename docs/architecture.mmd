@@ -1,0 +1,21 @@
+flowchart LR
+    A[Excel RH] --> B[Python ingestion]
+    A2[Excel Sport] --> B
+    C[Simulateur activites] --> D[Producer Redpanda]
+    D --> E[Topic sport_activities]
+    E --> F[Consumer Python]
+    F --> G[(raw.sport_activities_stream_raw)]
+    F --> H[Slack simulator]
+    H --> I[(raw.slack_messages_raw)]
+    B --> J[(raw.rh_employees_raw)]
+    B --> K[(raw.sport_declarations_raw)]
+    J --> L[dbt bronze]
+    K --> L
+    G --> L
+    I --> L
+    L --> M[dbt silver]
+    M --> N[dbt gold]
+    O[business_rules.yaml] --> P[Python loader]
+    P --> J
+    P --> M
+    N --> P[Power BI]

@@ -1,0 +1,137 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: sport-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sport_data}
+      POSTGRES_USER: ${POSTGRES_USER:-sport_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sport_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sport_user} -d ${POSTGRES_DB:-sport_data}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v24.1.8
+    container_name: sport-redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+
+  redpanda-console:
+    image: redpandadata/console:v2.5.2
+    container_name: sport-redpanda-console
+    depends_on:
+      - redpanda
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8080:8080"
+
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: sport-app
+    env_file:
+      - .env
+    volumes:
+      - ./:/workspace
+    working_dir: /workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    entrypoint: ["sleep", "infinity"]
+
+  dbt:
+    build:
+      context: .
+      dockerfile: dbt/Dockerfile
+    container_name: sport-dbt
+    env_file:
+      - .env
+    volumes:
+      - ./:/workspace
+    working_dir: /workspace/dbt/sport_data_dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sleep", "infinity"]
+
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    container_name: sport-airflow
+    user: "50000:0"
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin_demo}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin_demo_123}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Admin}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Demo}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin_demo@example.com}
+    volumes:
+      - ./:/opt/airflow/workspace
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    command: >
+      bash -lc "
+      airflow db migrate &&
+      airflow users create
+      --username \"$${AIRFLOW_ADMIN_USERNAME}\"
+      --firstname \"$${AIRFLOW_ADMIN_FIRSTNAME}\"
+      --lastname \"$${AIRFLOW_ADMIN_LASTNAME}\"
+      --role Admin
+      --email \"$${AIRFLOW_ADMIN_EMAIL}\"
+      --password \"$${AIRFLOW_ADMIN_PASSWORD}\"
+      || true &&
+      exec airflow standalone
+      "
+
+volumes:
+  postgres_data:

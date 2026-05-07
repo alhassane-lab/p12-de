@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+logs/
+airflow/logs/
+airflow/.venv/
+target/
+dbt_packages/
+*.pyc
+*.pyo
+*.DS_Store
+.env
+data/generated/*.csv
+data/generated/*.jsonl

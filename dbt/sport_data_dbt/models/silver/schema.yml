@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: sil_employees
+    description: "Salariés nettoyés, typés et enrichis avec la distance domicile-bureau."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+          - unique
+      - name: gross_salary
+        tests:
+          - not_null
+          - positive_value
+      - name: distance_km_to_office
+        tests:
+          - not_null
+          - non_negative
+      - name: contract_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['CDI', 'CDD', 'Stage', 'Alternance', 'Freelance']
+                quote: true
+  - name: sil_sport_activities
+    description: "Activités sportives propres issues du streaming Redpanda."
+    columns:
+      - name: activity_id
+        tests:
+          - not_null
+          - unique
+      - name: employee_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('sil_employees')
+                field: employee_id
+      - name: distance_km
+        tests:
+          - non_negative
+  - name: sil_employee_activity_yearly
+    columns:
+      - name: employee_id
+        tests:
+          - not_null

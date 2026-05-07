@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: business_rules
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+          - unique
+  - name: brz_rh_employees
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+  - name: brz_sport_declarations
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+  - name: brz_sport_activities
+    columns:
+      - name: activity_id
+        tests:
+          - not_null
+          - unique
