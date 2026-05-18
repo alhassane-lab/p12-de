@@ -16,14 +16,14 @@ WORKSPACE = "/opt/airflow/workspace"
 DBT_DIR = f"{WORKSPACE}/analytics/dbt"
 COMMON_ENV = """
 export PYTHONPATH=/opt/airflow/workspace/src
-export POSTGRES_HOST=postgres
-export POSTGRES_PORT=5432
-export POSTGRES_DB=sport_data
-export POSTGRES_USER=sport_user
-export POSTGRES_PASSWORD=sport_pass
-export REDPANDA_BROKERS=redpanda:9092
-export REDPANDA_TOPIC=sport_activities
-export SLACK_CHANNEL='#sport-avantages'
+export POSTGRES_HOST="${POSTGRES_HOST:-postgres}"
+export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+export POSTGRES_DB="${POSTGRES_DB:-sport_data}"
+export POSTGRES_USER="${POSTGRES_USER:?POSTGRES_USER is required}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+export REDPANDA_BROKERS="${REDPANDA_BROKERS:-redpanda:9092}"
+export REDPANDA_TOPIC="${REDPANDA_TOPIC:-sport_activities}"
+export SLACK_CHANNEL="${SLACK_CHANNEL:-#sport-avantages}"
 """
 
 

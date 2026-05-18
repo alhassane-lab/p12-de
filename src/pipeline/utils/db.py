@@ -14,7 +14,7 @@ def get_connection():
         port=os.getenv("POSTGRES_PORT", "5432"),
         dbname=os.getenv("POSTGRES_DB", "sport_data"),
         user=os.getenv("POSTGRES_USER", "sport_user"),
-        password=os.getenv("POSTGRES_PASSWORD", "sport_pass"),
+        password=os.getenv("POSTGRES_PASSWORD"),
         row_factory=dict_row,
     )
 

@@ -134,8 +134,8 @@ docker exec -it sport-postgres psql -U sport_user -d sport_data
 ```
 
 Identifiants par défaut :
-- PostgreSQL : `sport_user / sport_pass`
-- Grafana : `admin / admin`
+- PostgreSQL : définis dans `.env`
+- Grafana : définis dans `.env`
 - Airflow : définis dans [`.env.example`](/Users/papadou/Desktop/data_engineer/projets/p12-de/.env.example)
 
 ## Orchestration Airflow
@@ -192,6 +192,6 @@ Les règles sont ensuite historisées dans dbt :
 ## Documentation
 
 - [architecture.md](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/architecture.md)
-- [tableau_dashboard_guide.md](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/tableau_dashboard_guide.md)
+- [tableau_dashboard.md](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/tableau_dashboard.md)
 - [data_lexicon_silver_gold.md](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/data_lexicon_silver_gold.md)
 - [decisions.md](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/decisions.md)
