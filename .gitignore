@@ -16,6 +16,8 @@ dbt_packages/
 *.pyo
 *.DS_Store
 .env
+*.twb
+analytics/dbt/.user.yml
 .~*.twb
 .~*.twbr
 .~*.twb*

@@ -138,6 +138,9 @@ Identifiants par défaut :
 - Grafana : définis dans `.env`
 - Airflow : définis dans [`.env.example`](/Users/papadou/Desktop/data_engineer/projets/p12-de/.env.example)
 
+Point de sécurité :
+- définir une vraie valeur `AIRFLOW_FERNET_KEY` dans `.env` avant le démarrage d'Airflow
+
 ## Orchestration Airflow
 
 Le DAG principal est [sport_data_ingestion_dag.py](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/orchestration/airflow/dags/sport_data_ingestion_dag.py).

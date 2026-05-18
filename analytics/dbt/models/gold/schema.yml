@@ -8,9 +8,8 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('sil_employees')
-                field: employee_id
+              to: ref('sil_employees')
+              field: employee_id
       - name: bonus_amount
         description: "Montant de prime effectivement attribué. Vaut 0 si le salarié n'est pas éligible."
       - name: potential_bonus_amount

@@ -19,9 +19,8 @@ models:
       - name: contract_type
         tests:
           - accepted_values:
-              arguments:
-                values: ['CDI', 'CDD', 'Stage', 'Alternance', 'Freelance']
-                quote: true
+              values: ['CDI', 'CDD', 'Stage', 'Alternance', 'Freelance']
+              quote: true
   - name: sil_sport_activities
     description: "Activités sportives propres issues du streaming Redpanda."
     columns:
@@ -33,9 +32,8 @@ models:
         tests:
           - not_null
           - relationships:
-              arguments:
-                to: ref('sil_employees')
-                field: employee_id
+              to: ref('sil_employees')
+              field: employee_id
       - name: distance_km
         tests:
           - non_negative
