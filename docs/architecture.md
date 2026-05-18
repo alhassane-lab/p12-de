@@ -1,58 +1,43 @@
-# Architecture cible
+# Architecture du projet
 
-Le POC sépare clairement :
-- l'atterrissage des données brutes ;
-- le nettoyage et l'enrichissement ;
-- les restitutions métier.
+Le projet suit une architecture simple de POC, avec une séparation claire entre ingestion, transformation, contrôle qualité et restitution.
 
-## Couches
+## Chaîne de traitement
+
+1. Les fichiers RH, sport et règles métier sont chargés dans PostgreSQL `raw`.
+2. Les activités sportives simulées sont publiées dans Redpanda puis consommées par le pipeline.
+3. dbt transforme les données en couches `bronze`, `silver` et `gold`.
+4. `Great Expectations` et `dbt test` contrôlent la qualité.
+5. Tableau exploite les tables métier et Grafana les vues de monitoring.
+
+## Couches de données
+
+### Raw
+
+- données sources chargées sans transformation forte
+- stockage des événements consommés depuis Redpanda
 
 ### Bronze
 
-- sources brutes exposées dans dbt à partir des tables `raw`
-- traçabilité des fichiers et des événements
-- conservation du payload JSON original
+- standardisation des données brutes
+- historisation des règles métier
+- version courante et historique des paramètres
 
 ### Silver
 
-- typage des dates Excel
-- normalisation des modes de transport
-- dédoublonnage
-- calcul de distance domicile-bureau
-- consolidation salariés / activités / pratique déclarative
+- nettoyage et enrichissement des salariés et activités
+- normalisation des transports
+- contrôle de distance et consolidation des données
 
 ### Gold
 
-- éligibilité prime sportive
-- éligibilité jours bien-être
-- coûts, KPI, messages Slack, anomalies qualité
+- calcul des éligibilités
+- KPI RH et finance
+- timeline des avantages
+- table de cartographie salariés
 
-## Point d'attention POC
+## Points importants
 
-Le géocodage est simulé localement de manière déterministe à partir de l'adresse. Cela évite toute dépendance API externe tout en permettant de démontrer la règle de distance. Dans un projet réel, cette brique serait remplacée par un service de géocodage maîtrisé.
-
-## Orchestration Airflow
-
-Le projet utilise un DAG Airflow unique pour l'orchestration du pipeline quotidien.
-
-Deux comportements sont prévus :
-- en exécution planifiée quotidienne à `08:00`, les tâches de chargement statique sont skippées ;
-- en exécution manuelle avec `run_static_load=true`, ces tâches sont rejouées.
-
-Le pipeline quotidien est désormais piloté par une date logique :
-- en run planifié, Airflow transmet sa date d'exécution (`ds`) comme `process_date` ;
-- en run manuel, ce `process_date` peut être surchargé pour rejouer une journée précise.
-
-Le branchement est modélisé directement dans le code du DAG par deux dépendances :
-
-```python
-branch_static_load >> skip_static_load >> generate_activities
-branch_static_load >> load_business_rules >> ingest_static_sources >> generate_activities
-```
-
-La fonction Python du `BranchPythonOperator` décide simplement quelle première tâche de branche doit être suivie.
-
-Conséquence pour le backfill :
-- `generate_strava_like_activities.py` génère maintenant un lot journalier ;
-- `sport_activity_producer.py` publie ce lot journalier ;
-- `redpanda_consumer.py` consomme ce run en gardant la notion de `process_date`.
+- Le géocodage domicile est simulé localement et de manière déterministe.
+- Les règles métier sont versionnées pour permettre le rejeu.
+- Airflow orchestre les étapes, mais la logique métier reste portée par dbt et les scripts Python.

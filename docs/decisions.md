@@ -2,7 +2,7 @@
 
 ## Pourquoi PostgreSQL
 
-PostgreSQL suffit pour un POC, s'intègre bien avec dbt et Power BI, et simplifie la démonstration locale.
+PostgreSQL suffit pour un POC, s'intègre bien avec dbt et un outil BI comme Tableau, et simplifie la démonstration locale.
 
 ## Pourquoi Redpanda
 
