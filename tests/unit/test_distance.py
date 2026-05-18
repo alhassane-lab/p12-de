@@ -1,6 +1,6 @@
 """Unit tests covering deterministic distance and transport normalization helpers."""
 
-from app.utils.distance import haversine_km, normalize_transport_mode, pseudo_geocode_address
+from pipeline.utils.distance import haversine_km, normalize_transport_mode, pseudo_geocode_address
 
 
 def test_normalize_transport_mode():

@@ -8,29 +8,71 @@ Le projet couvre :
 - streaming via Redpanda ;
 - consommation et historisation des événements dans PostgreSQL ;
 - transformations analytiques avec dbt selon une architecture `bronze / silver / gold` ;
-- tests qualité ;
-- sorties prêtes pour Power BI ;
+- tests qualité avec `dbt` et `Great Expectations` ;
+- sorties prêtes pour un outil BI comme Tableau ;
 - rejeu historique lorsque les règles métier changent.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A[Excel RH] --> B[Ingestion Python]
-    A2[Excel Sport] --> B
-    C[Simulateur Strava 12 mois] --> D[Producer Redpanda]
-    D --> E[Topic sport_activities]
-    E --> F[Consumer Python]
-    F --> G[(PostgreSQL raw)]
-    F --> H[Slack simulator]
-    H --> I[(raw.slack_messages_raw)]
-    G --> J[dbt bronze]
-    J --> K[dbt silver]
-    K --> L[dbt gold]
-    L --> M[Power BI]
-    N[business_rules.yaml] --> O[Loader Python]
-    O --> G
-    O --> J
+    subgraph Sources
+        A[Excel RH]
+        A2[Excel Sport]
+        A3[business_rules.yaml]
+    end
+
+    subgraph Orchestration
+        O[Airflow DAG]
+    end
+
+    subgraph Streaming
+        R[Generate simulated activities]
+        S[Producer Redpanda]
+        T[Topic sport_activities]
+        U[Consumer Python]
+    end
+
+    subgraph Storage
+        B[Load static data]
+        C[(PostgreSQL raw)]
+        D[dbt bronze]
+        E[dbt silver]
+        F[dbt gold]
+        F2[Great Expectations]
+        G[Business rules history and validity]
+        H[(public_monitoring views)]
+    end
+
+    subgraph Restitution
+        I[Tableau / BI]
+        J[Grafana]
+    end
+
+    A --> B
+    A2 --> B
+    A3 --> B
+    B --> C
+
+    R --> S --> T --> U --> C
+    U --> K[Slack simulator] --> C
+
+    C --> D --> E --> F
+    F --> F2
+    D --> G
+    F --> I
+    F --> H
+    H --> J
+
+    O -. orchestrates .-> B
+    O -. orchestrates .-> R
+    O -. orchestrates .-> S
+    O -. orchestrates .-> U
+    O -. orchestrates .-> D
+    O -. orchestrates .-> E
+    O -. orchestrates .-> F
+    O -. quality checks .-> F2
+    O -. quality checks .-> H
 ```
 
 ## Stack technique
@@ -39,20 +81,21 @@ flowchart LR
 - `Redpanda` : bus d'événements pour les activités sportives.
 - `Python 3.11` : ingestion, simulation, producer, consumer, messages Slack simulés.
 - `dbt-postgres` : transformations SQL et tests.
+- `Great Expectations` : validation de cohérence sur les tables transformées.
 - `Airflow` : orchestration des étapes d'ingestion et de transformation.
 - `Docker Compose` : exécution locale reproductible.
 
 ## Structure du repo
 
 ```text
-app/                  Scripts Python
-airflow/              DAGs et configuration Airflow
-data/raw/             Sources Excel fournies
-data/generated/       Activités simulées
-dbt/sport_data_dbt/   Projet dbt
-docs/                 Diagrammes, cadrage, mockup Power BI
-scripts/              Commandes d'orchestration locale
-sql/init/             Initialisation PostgreSQL
+src/pipeline/                    Code Python du pipeline
+src/orchestration/airflow/       DAGs et configuration Airflow
+analytics/dbt/                   Projet dbt
+infra/postgres/init/             Initialisation PostgreSQL
+data/raw/                        Sources Excel fournies
+data/generated/                  Activités simulées
+data/exports/                    Exports CSV pour la BI
+docs/                            Architecture, lexique et guide Tableau
 ```
 
 ## Pré-requis
@@ -66,7 +109,7 @@ sql/init/             Initialisation PostgreSQL
 
 ```bash
 cp .env.example .env
-cp dbt/sport_data_dbt/profiles.yml.example dbt/sport_data_dbt/profiles.yml
+cp analytics/dbt/profiles.yml.example analytics/dbt/profiles.yml
 ```
 
 2. Démarrer l'infrastructure :
@@ -78,7 +121,13 @@ docker compose up -d postgres redpanda redpanda-console
 Pour lancer aussi Airflow :
 
 ```bash
-docker compose up -d airflow
+docker compose up -d airflow-init airflow-webserver airflow-scheduler
+```
+
+Pour lancer aussi le monitoring Grafana :
+
+```bash
+docker compose up -d grafana
 ```
 
 ### Accéder à PostgreSQL
@@ -94,12 +143,12 @@ Depuis `psql`, quelques commandes utiles :
 ```sql
 \dn
 \dt raw.*
-\dt bronze.*
-\dt silver.*
-\dt gold.*
-select * from gold.gold_kpi_finance;
-select * from gold.gold_kpi_employee_status limit 10;
-select * from gold.gold_slack_messages limit 10;
+\dt public_bronze.*
+\dt public_silver.*
+\dt public_gold.*
+select * from public_gold.gold_kpi_finance;
+select * from public_gold.gold_kpi_employee_status limit 10;
+select * from public_gold.gold_slack_messages limit 10;
 ```
 
 Pour quitter :
@@ -123,32 +172,32 @@ sport_pass
 3. Construire les conteneurs applicatifs :
 
 ```bash
-docker compose build app dbt airflow
+docker compose build pipeline dbt airflow
 ```
 
 4. Charger les sources statiques :
 
 ```bash
-docker compose run --rm app python -m app.config.load_business_rules
-docker compose run --rm app python -m app.ingestion.load_to_postgres
+docker compose run --rm pipeline python -m pipeline.config.load_business_rules
+docker compose run --rm pipeline python -m pipeline.ingestion.load_to_postgres
 ```
 
 5. Générer les activités simulées :
 
 ```bash
-docker compose run --rm app python -m app.simulation.generate_strava_like_activities
+docker compose run --rm pipeline python -m pipeline.simulation.generate_strava_like_activities
 ```
 
 6. Publier les événements dans Redpanda :
 
 ```bash
-docker compose run --rm app python -m app.simulation.sport_activity_producer
+docker compose run --rm pipeline python -m pipeline.simulation.sport_activity_producer
 ```
 
 7. Consommer les événements et générer les messages Slack simulés :
 
 ```bash
-docker compose run --rm app python -m app.streaming.redpanda_consumer
+docker compose run --rm pipeline python -m pipeline.streaming.redpanda_consumer
 ```
 
 8. Exécuter dbt :
@@ -157,13 +206,30 @@ docker compose run --rm app python -m app.streaming.redpanda_consumer
 docker compose run --rm dbt bash -lc "cp profiles.yml.example profiles.yml && dbt run && dbt test"
 ```
 
+9. Lancer les validations Great Expectations :
+
+```bash
+docker compose run --rm --entrypoint bash pipeline -lc "python -m pipeline.data_quality.run_great_expectations"
+```
+
+Le script produit un rapport JSON dans :
+
+```text
+data/generated/great_expectations/
+```
+
 ## Partie Airflow
 
 Airflow orchestre la partie ingestion du projet. Il ne remplace ni les scripts Python, ni dbt, ni Redpanda. Il enchaîne les étapes, trace les exécutions et facilite une démonstration plus “industrialisation”.
 
 ### Service Airflow
 
-Le service Airflow est défini dans [`docker-compose.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/docker-compose.yml) et son image dans [`airflow/Dockerfile`](/Users/papadou/Desktop/data_engineer/projets/p12-de/airflow/Dockerfile).
+La stack Airflow est définie dans [`docker-compose.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/docker-compose.yml) et son image dans [`src/orchestration/airflow/Dockerfile`](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/orchestration/airflow/Dockerfile).
+
+Elle est séparée en trois services :
+- `airflow-init` : initialise la metadata DB dans PostgreSQL et crée/réinitialise l'utilisateur admin ;
+- `airflow-webserver` : expose l'UI sur `localhost:8081` ;
+- `airflow-scheduler` : exécute la planification des DAGs.
 
 L'interface web est disponible sur :
 
@@ -174,7 +240,7 @@ http://localhost:8081
 Le démarrage se fait avec :
 
 ```bash
-docker compose up -d airflow
+docker compose up -d airflow-init airflow-webserver airflow-scheduler
 ```
 
 ### Identifiants Airflow
@@ -198,16 +264,54 @@ AIRFLOW_ADMIN_LASTNAME=Demo
 AIRFLOW_ADMIN_EMAIL=admin_demo@example.com
 ```
 
-Une fois `docker compose up -d airflow` exécuté, vous pouvez vous connecter avec ces identifiants sur :
+Une fois `docker compose up -d airflow-init airflow-webserver airflow-scheduler` exécuté, vous pouvez vous connecter avec ces identifiants sur :
 
 ```text
 http://localhost:8081
 ```
 
+## Monitoring
+
+Un monitoring léger a été ajouté avec `Grafana` branché directement sur PostgreSQL.
+
+Accès :
+
+```text
+http://localhost:3000
+```
+
+Identifiants par défaut :
+
+```text
+admin / admin
+```
+
+Variables disponibles dans [`.env.example`](/Users/papadou/Desktop/data_engineer/projets/p12-de/.env.example) :
+
+- `GRAFANA_ADMIN_USER`
+- `GRAFANA_ADMIN_PASSWORD`
+
+Le dashboard provisionné automatiquement s'appelle :
+
+- `Sport Data Monitoring`
+
+Il permet de suivre :
+
+- les runs Airflow récents et leurs statuts ;
+- la volumétrie quotidienne des événements bruts et des activités valides ;
+- le nombre d'employés actifs et éligibles au fil du temps ;
+- le volume courant des tables clés du pipeline.
+
+Les vues SQL utilisées par Grafana sont :
+
+- `public_monitoring.monitoring_airflow_runs`
+- `public_monitoring.monitoring_activity_volumes_daily`
+- `public_monitoring.monitoring_table_row_counts`
+
 ### DAG principal
 
 Le DAG est ici :
-- [`airflow/dags/sport_data_ingestion_dag.py`](/Users/papadou/Desktop/data_engineer/projets/p12-de/airflow/dags/sport_data_ingestion_dag.py)
+- [`src/orchestration/airflow/dags/sport_data_ingestion_dag.py`](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/orchestration/airflow/dags/sport_data_ingestion_dag.py)
 
 Nom du DAG :
 - `sport_data_ingestion_pipeline`
@@ -219,6 +323,7 @@ Il orchestre les étapes suivantes :
 - publication dans Redpanda ;
 - consommation des événements ;
 - exécution de `dbt run` ;
+- exécution des validations `Great Expectations` ;
 - exécution de `dbt test`.
 
 Planification :
@@ -226,14 +331,16 @@ Planification :
 
 Comportement par défaut :
 - les tâches `load_business_rules` et `ingest_static_sources` sont skippées en exécution planifiée ;
-- le DAG démarre alors directement à partir de la génération des activités.
+- le DAG démarre alors directement à partir de la génération des activités ;
+- la date logique Airflow du run (`ds`) devient le `process_date` utilisé par les scripts quotidiens.
 
 Déclenchement manuel avec rechargement statique :
 - depuis l'UI Airflow, vous pouvez lancer un `Trigger DAG` avec la configuration suivante :
 
 ```json
 {
-  "run_static_load": true
+  "run_static_load": true,
+  "process_date": "2026-05-01"
 }
 ```
 
@@ -241,7 +348,33 @@ Dans ce cas, le DAG exécute aussi :
 - `load_business_rules`
 - `ingest_static_sources`
 
+Déclenchement manuel pour un backfill journalier sans rechargement statique :
+
+```json
+{
+  "run_static_load": false,
+  "process_date": "2026-05-01"
+}
+```
+
 Le paramètre `run_static_load` est déclaré directement dans le DAG comme un `Param` Airflow. Selon la version et la vue de l'interface, il peut donc apparaître comme un champ booléen dans le formulaire de déclenchement plutôt que comme du JSON libre.
+Le paramètre `process_date` est lui aussi déclaré dans le DAG. Il permet de rejouer explicitement une journée donnée au lieu de dépendre uniquement de la date courante.
+Les paramètres `start_date` et `end_date` permettent désormais de lancer un vrai backfill automatique sur une plage de dates. Quand ils sont fournis, les tâches de génération et de publication bouclent de `start_date` à `end_date`, puis la consommation Redpanda ne s'exécute qu'une seule fois à la fin pour absorber tout le lot. Quand ils sont absents, le DAG conserve son comportement journalier habituel.
+
+Exemple de backfill sur une plage :
+
+```json
+{
+  "run_static_load": false,
+  "start_date": "2025-05-12",
+  "end_date": "2026-05-11"
+}
+```
+
+Priorité de résolution des dates :
+- `start_date` / `end_date` si la plage est fournie
+- sinon `process_date` pour un rejeu d'une seule journée
+- sinon `ds` pour le run planifié quotidien
 
 ### Comment le branchement est défini
 
@@ -269,7 +402,7 @@ La décision est donc prise par `BranchPythonOperator`, mais les branches elles-
 1. démarrer l'infra :
 
 ```bash
-docker compose up -d postgres redpanda redpanda-console airflow
+docker compose up -d postgres redpanda redpanda-console airflow-init airflow-webserver airflow-scheduler
 ```
 
 2. ouvrir Airflow :
@@ -300,15 +433,22 @@ Si l'interface Airflow lance directement le DAG sans vous laisser éditer le JSO
 Exécution par défaut avec skip du chargement statique :
 
 ```bash
-docker exec -it sport-airflow airflow dags trigger sport_data_ingestion_pipeline \
-  --conf '{"run_static_load": false}'
+docker exec -it sport-airflow-webserver airflow dags trigger sport_data_ingestion_pipeline \
+  --conf '{"run_static_load": false, "process_date": "2026-05-01"}'
 ```
 
 Exécution complète avec rechargement des règles métier et des fichiers Excel :
 
 ```bash
-docker exec -it sport-airflow airflow dags trigger sport_data_ingestion_pipeline \
-  --conf '{"run_static_load": true}'
+docker exec -it sport-airflow-webserver airflow dags trigger sport_data_ingestion_pipeline \
+  --conf '{"run_static_load": true, "process_date": "2026-05-01"}'
+```
+
+Backfill automatique sur une plage de dates :
+
+```bash
+docker exec -it sport-airflow-webserver airflow dags trigger sport_data_ingestion_pipeline \
+  --conf '{"run_static_load": false, "start_date": "2025-05-12", "end_date": "2026-05-11"}'
 ```
 
 ### Positionnement d'Airflow dans le projet
@@ -318,7 +458,7 @@ La logique métier reste dans dbt, et le streaming reste porté par Redpanda.
 
 ## Partie dbt
 
-Le projet dbt se trouve dans [`dbt/sport_data_dbt`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt).  
+Le projet dbt se trouve dans [`analytics/dbt`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt).  
 dbt est utilisé pour porter toute la logique analytique et métier, en séparant clairement les transformations SQL de l'ingestion Python.
 
 ### Rôle de dbt dans le projet
@@ -374,9 +514,9 @@ Modèles principaux :
 ### Tests dbt
 
 Les tests sont déclarés dans :
-- [`models/bronze/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/bronze/schema.yml)
-- [`models/silver/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/silver/schema.yml)
-- [`models/gold/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/gold/schema.yml)
+- [`models/bronze/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/bronze/schema.yml)
+- [`models/silver/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/silver/schema.yml)
+- [`models/gold/schema.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/gold/schema.yml)
 
 Tests standards utilisés :
 - `not_null`
@@ -385,12 +525,12 @@ Tests standards utilisés :
 - `accepted_values`
 
 Tests personnalisés :
-- [`non_negative`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/macros/test_non_negative.sql)
-- [`positive_value`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/macros/test_positive_value.sql)
+- [`non_negative`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/macros/test_non_negative.sql)
+- [`positive_value`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/macros/test_positive_value.sql)
 
 ### Commandes dbt
 
-Depuis [`dbt/sport_data_dbt`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt) :
+Depuis [`analytics/dbt`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt) :
 
 ```bash
 dbt run
@@ -410,27 +550,27 @@ Avant d'exécuter dbt, il faut charger les règles métier YAML dans PostgreSQL 
 
 ```bash
 cd /Users/papadou/Desktop/data_engineer/projets/p12-de
-python -m app.config.load_business_rules
+PYTHONPATH=src python -m pipeline.config.load_business_rules
 ```
 
 Puis lancer dbt :
 
 ```bash
-cd /Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt
+cd /Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt
 dbt run
 dbt test
 ```
 
-Ce point est important : dbt consomme une table SQL `raw.business_rules_raw`, mais la source de vérité métier reste le fichier YAML [`app/config/business_rules.yaml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/app/config/business_rules.yaml).
+Ce point est important : dbt consomme une table SQL `raw.business_rules_raw`, mais la source de vérité métier reste le fichier YAML [`src/pipeline/config/business_rules.yaml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/pipeline/config/business_rules.yaml).
 
 ### Ce qu'il faut montrer en démo
 
 Les fichiers les plus utiles à ouvrir pour expliquer dbt sont :
-- [`dbt_project.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/dbt_project.yml)
-- [`models/sources.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/sources.yml)
-- [`models/silver/sil_employees.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/silver/sil_employees.sql)
-- [`models/gold/gold_eligible_sport_bonus.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/gold/gold_eligible_sport_bonus.sql)
-- [`models/gold/gold_eligible_wellbeing_days.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/dbt/sport_data_dbt/models/gold/gold_eligible_wellbeing_days.sql)
+- [`dbt_project.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/dbt_project.yml)
+- [`models/sources.yml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/sources.yml)
+- [`models/silver/sil_employees.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/silver/sil_employees.sql)
+- [`models/gold/gold_eligible_sport_bonus.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/gold/gold_eligible_sport_bonus.sql)
+- [`models/gold/gold_eligible_wellbeing_days.sql`](/Users/papadou/Desktop/data_engineer/projets/p12-de/analytics/dbt/models/gold/gold_eligible_wellbeing_days.sql)
 - les fichiers `schema.yml` pour les tests
 
 ## Tables clés
@@ -444,19 +584,19 @@ Les fichiers les plus utiles à ouvrir pour expliquer dbt sont :
 
 ### Silver
 
-- `silver.sil_employees`
-- `silver.sil_sport_activities`
-- `silver.sil_employee_activity_yearly`
-- `silver.sil_employee_activity_joined`
+- `public_silver.sil_employees`
+- `public_silver.sil_sport_activities`
+- `public_silver.sil_employee_activity_yearly`
+- `public_silver.sil_employee_activity_joined`
 
 ### Gold
 
-- `gold.gold_eligible_sport_bonus`
-- `gold.gold_eligible_wellbeing_days`
-- `gold.gold_kpi_finance`
-- `gold.gold_kpi_employee_status`
-- `gold.gold_slack_messages`
-- `gold.gold_quality_anomalies`
+- `public_gold.gold_eligible_sport_bonus`
+- `public_gold.gold_eligible_wellbeing_days`
+- `public_gold.gold_kpi_finance`
+- `public_gold.gold_kpi_employee_status`
+- `public_gold.gold_slack_messages`
+- `public_gold.gold_quality_anomalies`
 
 ## Règles métier gérées
 
@@ -468,18 +608,27 @@ Les fichiers les plus utiles à ouvrir pour expliquer dbt sont :
 - Chaque activité consommée génère un message Slack simulé.
 
 Les règles sont centralisées dans :
-- [`app/config/business_rules.yaml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/app/config/business_rules.yaml)
+- [`src/pipeline/config/business_rules.yaml`](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/pipeline/config/business_rules.yaml)
 
 Puis chargées en base dans `raw.business_rules_raw` via :
-- [`app/config/load_business_rules.py`](/Users/papadou/Desktop/data_engineer/projets/p12-de/app/config/load_business_rules.py)
+- [`src/pipeline/config/load_business_rules.py`](/Users/papadou/Desktop/data_engineer/projets/p12-de/src/pipeline/config/load_business_rules.py)
 
 ## Rejeu historique
 
 Le rejeu se fait en modifiant les règles, puis en relançant :
 
 ```bash
-docker compose run --rm app python -m app.config.load_business_rules
-docker compose run --rm dbt bash -lc "cp profiles.yml.example profiles.yml && ./../../scripts/replay_history.sh"
+cd /Users/papadou/Desktop/data_engineer/projets/p12-de
+source .venv/bin/activate
+set -a
+source .env
+set +a
+
+PYTHONPATH=src python -m pipeline.config.load_business_rules
+
+cd analytics/dbt
+dbt run --full-refresh
+dbt test
 ```
 
 Dans un POC, cette approche est suffisante pour recalculer l'historique analytique sans réécrire les sources brutes.
@@ -497,9 +646,17 @@ Tests Python inclus :
 - helpers de distance
 - normalisation de transport
 
-## Power BI attendu
+## Dashboard attendu
 
 Voir [`docs/powerbi_mockup.md`](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/powerbi_mockup.md).
+
+## Guide Tableau
+
+Pour une réalisation complète du dashboard dans Tableau à partir des tables `public_gold`, voir [`docs/tableau_dashboard_guide.md`](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/tableau_dashboard_guide.md).
+
+## Lexique des données
+
+Pour le lexique métier et analytique des couches `silver` et `gold`, voir [`docs/data_lexicon_silver_gold.md`](/Users/papadou/Desktop/data_engineer/projets/p12-de/docs/data_lexicon_silver_gold.md).
 
 ## Choix techniques
 

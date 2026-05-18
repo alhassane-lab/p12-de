@@ -10,7 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/init:/docker-entrypoint-initdb.d
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sport_user} -d ${POSTGRES_DB:-sport_data}"]
       interval: 10s
@@ -55,13 +55,17 @@ services:
     ports:
       - "8080:8080"
 
-  app:
+  pipeline:
     build:
       context: .
-      dockerfile: app/Dockerfile
-    container_name: sport-app
+      dockerfile: src/pipeline/Dockerfile
+    container_name: sport-pipeline
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /workspace/src
+      POSTGRES_HOST: postgres
+      REDPANDA_BROKERS: redpanda:9092
     volumes:
       - ./:/workspace
     working_dir: /workspace
@@ -75,23 +79,25 @@ services:
   dbt:
     build:
       context: .
-      dockerfile: dbt/Dockerfile
+      dockerfile: analytics/dbt/Dockerfile
     container_name: sport-dbt
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: postgres
     volumes:
       - ./:/workspace
-    working_dir: /workspace/dbt/sport_data_dbt
+    working_dir: /workspace/analytics/dbt
     depends_on:
       postgres:
         condition: service_healthy
     entrypoint: ["sleep", "infinity"]
 
-  airflow:
+  airflow-init:
     build:
       context: .
-      dockerfile: airflow/Dockerfile
-    container_name: sport-airflow
+      dockerfile: src/orchestration/airflow/Dockerfile
+    container_name: sport-airflow-init
     user: "50000:0"
     env_file:
       - .env
@@ -101,17 +107,67 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-sport_user}:${POSTGRES_PASSWORD:-sport_pass}@postgres:5432/${POSTGRES_DB:-sport_data}
       AIRFLOW_UID: ${AIRFLOW_UID:-50000}
       AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin_demo}
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin_demo_123}
       AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Admin}
       AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Demo}
       AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin_demo@example.com}
+      PYTHONPATH: /opt/airflow/workspace/src
+      POSTGRES_HOST: postgres
+      REDPANDA_BROKERS: redpanda:9092
     volumes:
       - ./:/opt/airflow/workspace
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
+      - ./src/orchestration/airflow/dags:/opt/airflow/dags
+      - ./src/orchestration/airflow/logs:/opt/airflow/logs
+      - ./src/orchestration/airflow/plugins:/opt/airflow/plugins
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    restart: "no"
+    command: >
+      bash -lc "
+      set -euo pipefail;
+      airflow db migrate;
+      if airflow users list | grep -q \" $${AIRFLOW_ADMIN_USERNAME} \"; then
+        airflow users reset-password --username \"$${AIRFLOW_ADMIN_USERNAME}\" --password \"$${AIRFLOW_ADMIN_PASSWORD}\";
+      else
+        airflow users create --username \"$${AIRFLOW_ADMIN_USERNAME}\" --firstname \"$${AIRFLOW_ADMIN_FIRSTNAME}\" --lastname \"$${AIRFLOW_ADMIN_LASTNAME}\" --role Admin --email \"$${AIRFLOW_ADMIN_EMAIL}\" --password \"$${AIRFLOW_ADMIN_PASSWORD}\";
+      fi
+      "
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: src/orchestration/airflow/Dockerfile
+    container_name: sport-airflow-webserver
+    user: "50000:0"
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-sport_user}:${POSTGRES_PASSWORD:-sport_pass}@postgres:5432/${POSTGRES_DB:-sport_data}
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin_demo}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin_demo_123}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Admin}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Demo}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin_demo@example.com}
+      PYTHONPATH: /opt/airflow/workspace/src
+      POSTGRES_HOST: postgres
+      REDPANDA_BROKERS: redpanda:9092
+    volumes:
+      - ./:/opt/airflow/workspace
+      - ./src/orchestration/airflow/dags:/opt/airflow/dags
+      - ./src/orchestration/airflow/logs:/opt/airflow/logs
+      - ./src/orchestration/airflow/plugins:/opt/airflow/plugins
     ports:
       - "8081:8080"
     depends_on:
@@ -119,19 +175,65 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_started
-    command: >
-      bash -lc "
-      airflow db migrate &&
-      airflow users create
-      --username \"$${AIRFLOW_ADMIN_USERNAME}\"
-      --firstname \"$${AIRFLOW_ADMIN_FIRSTNAME}\"
-      --lastname \"$${AIRFLOW_ADMIN_LASTNAME}\"
-      --role Admin
-      --email \"$${AIRFLOW_ADMIN_EMAIL}\"
-      --password \"$${AIRFLOW_ADMIN_PASSWORD}\"
-      || true &&
-      exec airflow standalone
-      "
+      airflow-init:
+        condition: service_completed_successfully
+    command: ["airflow", "webserver"]
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: src/orchestration/airflow/Dockerfile
+    container_name: sport-airflow-scheduler
+    user: "50000:0"
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__CORE__FERNET_KEY: ""
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-sport_user}:${POSTGRES_PASSWORD:-sport_pass}@postgres:5432/${POSTGRES_DB:-sport_data}
+      AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin_demo}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin_demo_123}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Admin}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Demo}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin_demo@example.com}
+      PYTHONPATH: /opt/airflow/workspace/src
+      POSTGRES_HOST: postgres
+      REDPANDA_BROKERS: redpanda:9092
+    volumes:
+      - ./:/opt/airflow/workspace
+      - ./src/orchestration/airflow/dags:/opt/airflow/dags
+      - ./src/orchestration/airflow/logs:/opt/airflow/logs
+      - ./src/orchestration/airflow/plugins:/opt/airflow/plugins
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+      airflow-init:
+        condition: service_completed_successfully
+    command: ["airflow", "scheduler"]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: sport-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      POSTGRES_DB: ${POSTGRES_DB:-sport_data}
+      POSTGRES_USER: ${POSTGRES_USER:-sport_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sport_pass}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:

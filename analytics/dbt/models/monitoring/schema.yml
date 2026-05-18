@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: monitoring_airflow_runs
+    description: "Suivi des exécutions Airflow avec agrégats de tâches."
+    columns:
+      - name: dag_id
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+  - name: monitoring_activity_volumes_daily
+    description: "Volumétrie quotidienne des flux d'activités sur les couches raw, silver et gold."
+    columns:
+      - name: metric_date
+        tests:
+          - not_null
+  - name: monitoring_table_row_counts
+    description: "Nombre courant de lignes dans les tables clés du pipeline."

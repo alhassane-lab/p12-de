@@ -2,8 +2,8 @@
 __pycache__/
 .pytest_cache/
 logs/
-airflow/logs/
-airflow/.venv/
+src/orchestration/airflow/logs/
+src/orchestration/airflow/.venv/
 target/
 dbt_packages/
 *.pyc
@@ -12,3 +12,4 @@ dbt_packages/
 .env
 data/generated/*.csv
 data/generated/*.jsonl
+data/generated/great_expectations/

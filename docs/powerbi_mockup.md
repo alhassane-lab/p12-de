@@ -1,4 +1,4 @@
-# Dashboard Power BI attendu
+# Dashboard BI attendu
 
 ## Page 1 - Vue exécutive
 
@@ -21,13 +21,13 @@
 
 - Carte KPI `Nombre d'anomalies`
 - Tableau `Anomalies par type`
-- Tableau détaillé depuis `gold.gold_quality_anomalies`
+- Tableau détaillé depuis `public_gold.gold_quality_anomalies`
 
-## Tables Power BI à connecter
+## Tables BI à connecter
 
-- `gold.gold_kpi_finance`
-- `gold.gold_kpi_employee_status`
-- `gold.gold_eligible_sport_bonus`
-- `gold.gold_eligible_wellbeing_days`
-- `gold.gold_slack_messages`
-- `gold.gold_quality_anomalies`
+- `public_gold.gold_kpi_finance`
+- `public_gold.gold_kpi_employee_status`
+- `public_gold.gold_eligible_sport_bonus`
+- `public_gold.gold_eligible_wellbeing_days`
+- `public_gold.gold_slack_messages`
+- `public_gold.gold_quality_anomalies`

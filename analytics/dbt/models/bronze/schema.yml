@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: business_rules_history
+    description: "Historique complet des versions de règles métier chargées depuis le YAML."
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+          - unique
+      - name: is_latest
+        description: "Indique si cette version est la version la plus récente utilisée par les modèles métier."
+  - name: business_rules_validity
+    description: "Versions de règles métier avec fenêtre de validité temporelle."
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+          - unique
+      - name: effective_from
+        tests:
+          - not_null
+      - name: is_current
+        description: "Indique si cette version est la règle actuellement active à la date du jour."
+  - name: business_rules
+    description: "Version courante des règles métier utilisée par les modèles downstream."
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+          - unique
+      - name: rules_payload
+        description: "Payload JSON complet des règles métier chargées depuis le YAML."
+  - name: business_rule_parameters_history
+    description: "Historique complet des règles métier sous forme clé/valeur."
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+      - name: rule_path
+        tests:
+          - not_null
+      - name: rule_value_json
+        tests:
+          - not_null
+  - name: business_rule_parameters
+    description: "Version courante des règles métier sous forme clé/valeur."
+    columns:
+      - name: rule_version
+        tests:
+          - not_null
+      - name: rule_path
+        tests:
+          - not_null
+      - name: rule_value_json
+        tests:
+          - not_null
+  - name: brz_rh_employees
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+  - name: brz_sport_declarations
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+  - name: brz_sport_activities
+    columns:
+      - name: activity_id
+        tests:
+          - not_null
+          - unique

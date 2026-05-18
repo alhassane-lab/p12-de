@@ -39,6 +39,10 @@ Deux comportements sont prévus :
 - en exécution planifiée quotidienne à `08:00`, les tâches de chargement statique sont skippées ;
 - en exécution manuelle avec `run_static_load=true`, ces tâches sont rejouées.
 
+Le pipeline quotidien est désormais piloté par une date logique :
+- en run planifié, Airflow transmet sa date d'exécution (`ds`) comme `process_date` ;
+- en run manuel, ce `process_date` peut être surchargé pour rejouer une journée précise.
+
 Le branchement est modélisé directement dans le code du DAG par deux dépendances :
 
 ```python
@@ -47,3 +51,8 @@ branch_static_load >> load_business_rules >> ingest_static_sources >> generate_a
 ```
 
 La fonction Python du `BranchPythonOperator` décide simplement quelle première tâche de branche doit être suivie.
+
+Conséquence pour le backfill :
+- `generate_strava_like_activities.py` génère maintenant un lot journalier ;
+- `sport_activity_producer.py` publie ce lot journalier ;
+- `redpanda_consumer.py` consomme ce run en gardant la notion de `process_date`.

@@ -1,0 +1,79 @@
+version: 2
+
+models:
+  - name: gold_eligible_sport_bonus
+    description: "Eligibilité à la prime sportive de 5%."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('sil_employees')
+                field: employee_id
+      - name: bonus_amount
+        description: "Montant de prime effectivement attribué. Vaut 0 si le salarié n'est pas éligible."
+      - name: potential_bonus_amount
+        description: "Montant théorique de la prime calculé sur le salaire brut, indépendamment de l'éligibilité."
+  - name: gold_eligible_wellbeing_days
+    description: "Eligibilité aux 5 jours bien-être."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+  - name: gold_kpi_finance
+    description: "KPI de synthèse pour Power BI."
+  - name: gold_kpi_employee_status
+    description: "Vue gold par salarié pour la restitution BI des KPI d'éligibilité et d'activité."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+      - name: bonus_amount
+        description: "Montant de prime réellement attribué. Vaut 0 si non éligible."
+      - name: potential_bonus_amount
+        description: "Montant théorique potentiel si le salarié était éligible à la prime sport."
+      - name: contract_type
+        description: "Type de contrat du salarié propagé depuis la couche silver pour le filtrage BI."
+      - name: last_activity_date
+        description: "Dernière date d'activité sportive valide observée sur les 12 derniers mois."
+      - name: last_process_date
+        description: "Dernière date logique de déclaration/traitement d'une activité valide sur les 12 derniers mois."
+  - name: gold_employee_benefit_timeline
+    description: "Historique quotidien par salarié pour suivre l'évolution des activités et des avantages dans le temps."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+      - name: snapshot_date
+        tests:
+          - not_null
+      - name: contract_type
+        description: "Type de contrat du salarié pour l'analyse temporelle BI."
+      - name: activity_count_12m
+        description: "Nombre d'activités valides connues à date sur une fenêtre glissante de 12 mois."
+      - name: is_wellbeing_eligible
+        description: "Statut d'éligibilité aux jours bien-être à la date du snapshot."
+      - name: is_bonus_eligible
+        description: "Statut d'éligibilité à la prime sport à la date du snapshot."
+      - name: bonus_amount
+        description: "Montant de prime réellement attribué au jour du snapshot. Vaut 0 si non éligible."
+      - name: potential_bonus_amount
+        description: "Montant théorique de la prime au jour du snapshot, indépendamment de l'éligibilité."
+  - name: gold_employee_map
+    description: "Vue gold dédiée aux cartes Tableau avec une ligne par salarié."
+    columns:
+      - name: employee_id
+        tests:
+          - not_null
+          - unique
+      - name: home_city
+        description: "Ville extraite de l'adresse du domicile pour les analyses géographiques."
+      - name: home_lat
+        tests:
+          - not_null
+      - name: home_lon
+        tests:
+          - not_null
+  - name: gold_slack_messages
+    description: "Messages Slack simulés générés à partir des activités."

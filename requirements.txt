@@ -5,3 +5,4 @@ PyYAML==6.0.2
 faker==25.8.0
 confluent-kafka==2.4.0
 pytest==8.3.2
+great-expectations==1.16.1

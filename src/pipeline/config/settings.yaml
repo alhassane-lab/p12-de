@@ -1,0 +1,30 @@
+project_name: sport-data-solution-poc
+office_address: "1362 Av. des Platanes, 34970 Lattes"
+slack_channel: "#sport-avantages"
+redpanda:
+  topic: "sport_activities"
+  brokers: "redpanda:9092"
+simulation:
+  months_history: 12
+  employee_profiles:
+    dormant:
+      weight: 0.18
+      active_day_probability: 0.02
+      min_activities_per_active_day: 1
+      max_activities_per_active_day: 1
+    occasional:
+      weight: 0.32
+      active_day_probability: 0.06
+      min_activities_per_active_day: 1
+      max_activities_per_active_day: 1
+    regular:
+      weight: 0.33
+      active_day_probability: 0.18
+      min_activities_per_active_day: 1
+      max_activities_per_active_day: 2
+    intense:
+      weight: 0.17
+      active_day_probability: 0.42
+      min_activities_per_active_day: 1
+      max_activities_per_active_day: 3
+  invalid_activity_rate: 0.12
